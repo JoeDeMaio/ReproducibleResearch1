@@ -1,0 +1,140 @@
+Week 2 Peer Graded Assignment
+=============================
+## Activity Monitoring - steps per five-minute time interval
+```{r loadData, echo=FALSE}
+# This chunk is where we load the data
+activity <- read.csv("activity.csv", header = TRUE)
+```
+### Total number of steps taken per day.  
+  
+The following is a table of the total number of steps per day:
+``` {r stepsPerDay, echo=FALSE,  results = "asis", message = FALSE, warning=FALSE}
+library(dplyr)
+# change date from factor to date
+activity <- mutate(activity, date = as.Date(as.character(date), "%Y-%m-%d"))
+
+# group data by date
+activity.date <- activity %>% group_by(date)  %>% 
+    summarize(total = sum(steps, na.rm = TRUE), 
+              mean.steps = mean(steps, na.rm = TRUE))
+
+library(xtable)
+# instead of one long continuous table I broke the table into three parts
+# this allows for less scrolling
+activity.date <- mutate(activity.date, activity.date = as.character(date)) 
+myTable <- data.frame(activity.date[,c(4, 2)])
+myTable1 <- myTable[1:21,]
+myTable2 <- myTable[22:42,]
+myTable3 <- myTable[43:61,]
+newrow <- data.frame(nrow = 1, ncol = 2)
+newrow[1,1] = ""
+newrow[1,2] = NA
+names(newrow) <- names(myTable3)
+myTable3 <- rbind(myTable3, newrow)
+myTable3 <- rbind(myTable3, newrow)
+myTableX <- cbind(myTable1, myTable2)
+myTableX <- cbind(myTableX, myTable3)
+xt <- xtable(myTableX)
+names(xt) <- c("Date","Total Steps","Date","Total Steps", "Date", "Total Steps")
+print(xt, type = "html", include.rownames = FALSE)
+```
+    
+  
+The following is a histogram of the total number of steps taken each day:
+```{r histogram, echo=FALSE}
+brk <- (0:25) * 1000  
+activity.date <- activity %>% group_by(date)  %>% 
+    summarize(total = sum(steps, na.rm = TRUE), 
+              mean.steps = mean(steps, na.rm = TRUE))
+par(mfrow = c(1, 1), "mar" = c(1, 1, 1, 1))
+with(activity.date, hist(total, col = "darkblue", 
+                     border = "white", xlab = "Total Steps", 
+                        main = "Histogram of Total Steps", breaks = brk))
+StepsMean <- mean(activity.date$total)
+StepsMedian <- median(activity.date$total)
+```
+
+The mean of the total number of steps per day: `r StepsMean`  
+The median of the total number of steps per day: `r StepsMedian`
+
+### Daily Activity Pattern  
+The time series plot the 5-minute interval and the average number of steps taken, averaged across all days.
+```{r dailyactivity, echo=FALSE,  message = FALSE, warning=FALSE}
+activity.interval <- activity %>% group_by(interval)  %>% 
+    summarize(total = sum(steps, na.rm = TRUE), 
+              mean.steps = mean(steps, na.rm = TRUE))
+plot(activity.interval$interval, activity.interval$mean.steps,xlab = "Actvity Interval", 	ylab = "Mean Number of Steps Per Interval" ,
+     	type = "l", main = "Time Series Plot of Mean Steps per Time Interval")
+legend("topright", lwd = 1, legend = "Mean steps per time interval")
+maxInterval <-  filter(activity.interval, mean.steps == max(activity.interval$mean.steps))$interval
+library(sqldf)
+activity.merge <- sqldf("select a.date, a.interval, a.steps, b.[mean.steps] from activity a left outer join [activity.interval] b on a.interval = b.interval")
+```
+  
+The five-minute interval, on average across all the days in the dataset, that contains the maximum number of steps is `r maxInterval`
+
+
+```{r MissingValues, echo=FALSE, results = "asis", message = FALSE, warning=FALSE}
+Missing <- is.na(activity$steps)
+```
+### Imputing missing values.
+
+The total number of missing values is `r sum(Missing)`.  
+We impute the missing values by using the average number of steps for that time interval.
+```{r impute, echo=FALSE}
+# We impute the missing values by using the average number of steps for that time  
+# interval. 
+activity.interval <- activity %>% group_by(interval)  %>% 
+    summarize(mean.steps = mean(steps, na.rm = TRUE))
+
+# use SQL to merge the column with the mean values
+activity.merge <- sqldf("select a.date, a.interval, a.steps, b.[mean.steps] from activity a left outer join [activity.interval] b on a.interval = b.interval")
+
+# this short function puts the missing values in
+ for(i in 1:nrow(activity.merge)) {if(is.na(activity.merge[i,3])) activity.merge[i,3] = activity.merge[i,4]}
+##
+## activity.merge now has the original data with the missing values filled in
+activity.sum <- activity.merge %>% group_by(date)  %>% 
+  summarize(total = sum(steps))
+with(activity.sum, hist(total, col = "darkred", 
+    border = "white", xlab = "Total Steps - missing values imputed", 
+    main = "Histogram of Total Steps", breaks = brk))
+```
+    
+### Comparing Weekday values to Weekend values.  
+The following two plots compare activity in average steps per time interval for weekends and weekdays.
+```{r weekend, echo=FALSE}
+
+#add day of week to each date
+activity.merge  <- mutate(activity.merge, DofW = weekdays(date, abbreviate = TRUE))
+
+# set a logical value - true if weekday, false if weekend
+activity.merge  <- mutate(activity.merge, weekday = !(DofW == "Sun" | DofW == "Sat"))
+
+# this dataset has weekend values (not weekday)
+activity.Wkend <- activity.merge[!activity.merge$weekday,]
+
+# this dataset has weekday values
+activity.Wkday <- activity.merge[activity.merge$weekday,]
+
+activity.Wkday <- select(activity.Wkday, 2:3)  %>% group_by(interval)  %>% 
+  summarize(mean.steps = mean(steps))
+activity.Wkend <- select(activity.Wkend, 2:3)  %>% group_by(interval)  %>% 
+  summarize(mean.steps = mean(steps))
+par(mfrow = c(2, 1), "mar" = c(4, 4, 2, 1))
+
+# plot both vertically
+plot(activity.Wkday$interval, activity.Wkday$mean.steps,xlab = "Actvity Interval",
+      cex.axis = 0.8,  ylab = "Number of Steps" , cex.main = 0.8,
+      cex.lab = 0.8, type = "l", 
+      main = "Time Series Plot of Steps per Time Interval - Weekdays")
+legend("topright", lwd = 1, legend = "Steps per time interval", cex = 0.5)
+plot(activity.Wkend$interval, activity.Wkend$mean.steps,xlab = "Actvity Interval", 	
+     ylab = "Number of Steps", col = "red", 
+     cex.main = 0.8, cex.lab = 0.8, type = "l", 
+     main = "Time Series Plot of Steps per Time Interval - Weekends")
+legend("topright", lwd = 1, col = "red", legend = "Seps per time interval", 
+       cex = 0.5)
+```
+  
+These two plots show that on weekends activity begins later but rises to a peak more quickly than on weekdays.  There is also more activity on weekends during the day.
